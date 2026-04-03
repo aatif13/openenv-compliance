@@ -2,16 +2,13 @@
 Inference Script — OpenEnv Document Compliance Auditing
 ===================================
 MANDATORY environment variables:
-    API_BASE_URL   The API endpoint for the LLM (e.g. https://router.huggingface.co/v1)
-    MODEL_NAME     The model identifier to use for inference (e.g. nvidia/Llama-3.1-Nemotron-70B-Instruct)
-    HF_TOKEN       Your Hugging Face API key
+    API_BASE_URL   The API endpoint for the LLM
+    MODEL_NAME     The model identifier to use for inference
+    HF_TOKEN       Your Hugging Face / API key
 
-Usage:
-    export API_BASE_URL="https://router.huggingface.co/v1"
-    export MODEL_NAME="nvidia/Llama-3.1-Nemotron-70B-Instruct"
-    export HF_TOKEN="hf_..."
-    export OPENENV_BASE_URL="https://aakama-openenv-compliance.hf.space"
-    python inference.py
+Optional:
+    LOCAL_IMAGE_NAME  When using from_docker_image()
+    OPENENV_BASE_URL  The OpenEnv environment URL (default: HF Space)
 """
 
 import os
@@ -22,31 +19,32 @@ import textwrap
 from typing import List, Dict, Any, Optional
 from openai import OpenAI
 
-# ─── Config ───────────────────────────────────────────────────────────────────
-API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
-API_KEY      = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
-MODEL_NAME   = os.getenv("MODEL_NAME")
-OPENENV_URL  = os.getenv("OPENENV_BASE_URL", "https://aakama-openenv-compliance.hf.space")
+# ─── Environment Variables ────────────────────────────────────────────────────
+# Defaults set ONLY for API_BASE_URL and MODEL_NAME (not HF_TOKEN)
+API_BASE_URL     = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
+MODEL_NAME       = os.getenv("MODEL_NAME", "nvidia/Llama-3.1-Nemotron-70B-Instruct-FP8")
+HF_TOKEN         = os.getenv("HF_TOKEN")
+LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
+OPENENV_URL      = os.getenv("OPENENV_BASE_URL", "https://aakama-openenv-compliance.hf.space")
 
-MAX_STEPS    = 30
-TEMPERATURE  = 0.1
-MAX_TOKENS   = 300
-SEEDS        = {1: 42, 2: 42, 3: 42}
-DEBUG        = True
+MAX_STEPS   = 30
+TEMPERATURE = 0.1
+MAX_TOKENS  = 300
+SEEDS       = {1: 42, 2: 42, 3: 42}
 
-# ─── Validate config ──────────────────────────────────────────────────────────
-if not API_KEY:
-    raise EnvironmentError("HF_TOKEN or API_KEY environment variable not set.")
-if not MODEL_NAME:
-    raise EnvironmentError("MODEL_NAME environment variable not set.")
+# ─── Validate ─────────────────────────────────────────────────────────────────
+if not HF_TOKEN:
+    raise EnvironmentError("HF_TOKEN environment variable not set.")
 
-# ─── OpenAI client pointing to HF router ─────────────────────────────────────
+# ─── OpenAI Client (configured via environment variables) ─────────────────────
+from openai import OpenAI
+
 client = OpenAI(
     base_url=API_BASE_URL,
-    api_key=API_KEY,
+    api_key=HF_TOKEN,
 )
 
-# ─── System prompts per task ──────────────────────────────────────────────────
+# ─── System Prompts ───────────────────────────────────────────────────────────
 SYSTEM_PROMPTS = {
     1: textwrap.dedent("""
         You are an expert compliance auditor reviewing an employment contract.
@@ -111,7 +109,7 @@ SYSTEM_PROMPTS = {
     """).strip(),
 }
 
-# ─── Environment API helpers ──────────────────────────────────────────────────
+# ─── Environment API Helpers ──────────────────────────────────────────────────
 
 def env_reset(task_id: int, seed: int) -> Dict[str, Any]:
     r = requests.post(f"{OPENENV_URL}/reset", params={"task_id": task_id, "seed": seed})
@@ -132,52 +130,36 @@ def env_grade(session_id: str) -> Dict[str, Any]:
     r.raise_for_status()
     return r.json()
 
-# ─── Action parser ────────────────────────────────────────────────────────────
+# ─── Action Parser ────────────────────────────────────────────────────────────
 
 ACTION_PATTERN = re.compile(r'\{.*\}', re.DOTALL)
 
 def parse_action(raw: str) -> Dict[str, Any]:
-    """Extract JSON action from LLM response."""
-    # Strip markdown fences
     raw = raw.strip()
     if raw.startswith("```"):
         raw = re.sub(r"```(?:json)?", "", raw).strip().rstrip("```").strip()
-
-    # Try direct parse first
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
         pass
-
-    # Try extracting JSON object
     match = ACTION_PATTERN.search(raw)
     if match:
         try:
             return json.loads(match.group())
         except json.JSONDecodeError:
             pass
-
-    if DEBUG:
-        print(f"  ⚠️  Could not parse action from: {raw[:100]}")
-
-    # Fallback
     return {"action_type": "submit"}
 
-# ─── LLM agent ────────────────────────────────────────────────────────────────
+# ─── LLM Agent ────────────────────────────────────────────────────────────────
 
 def get_next_action(
     task_id: int,
     observation: Dict[str, Any],
     history: List[Dict],
 ) -> Dict[str, Any]:
-    """Call LLM to get next action given current observation."""
-
     messages = [{"role": "system", "content": SYSTEM_PROMPTS[task_id]}]
-
-    # Include recent history (last 8 turns)
     messages.extend(history[-8:])
 
-    # Build current user message
     user_content = f"""
 DOCUMENT:
 {observation['document_text'][:4000]}
@@ -202,98 +184,81 @@ What is your next action? Reply with JSON only.
     raw = response.choices[0].message.content.strip()
     action = parse_action(raw)
 
-    # Add to history
     history.append({"role": "user", "content": user_content})
     history.append({"role": "assistant", "content": raw})
 
     return action
 
-# ─── Run one task episode ─────────────────────────────────────────────────────
+# ─── Run One Task Episode ─────────────────────────────────────────────────────
 
 def run_task(task_id: int, seed: int) -> float:
-    print(f"\n{'='*55}")
-    print(f"  Task {task_id} | seed={seed}")
-    print(f"{'='*55}")
+    # START log — required structured format
+    print(json.dumps({
+        "type": "START",
+        "task_id": task_id,
+        "seed": seed,
+        "model": MODEL_NAME,
+    }))
 
-    # Reset
     result = env_reset(task_id=task_id, seed=seed)
     session_id = result["session_id"]
     observation = result["observation"]
-
-    print(f"  Task: {observation['task_name']}")
-    print(f"  Document: {len(observation['document_text'])} chars")
-    print(f"  Max steps: {observation['max_steps']}")
 
     history = []
     max_steps = min(observation["max_steps"], MAX_STEPS)
 
     for step_num in range(max_steps):
-        # Get action from LLM
         action = get_next_action(task_id, observation, history)
 
-        if DEBUG:
-            print(f"  Step {step_num+1:02d}: {action.get('action_type')} | {action.get('field', '')}")
+        # STEP log — required structured format
+        print(json.dumps({
+            "type": "STEP",
+            "task_id": task_id,
+            "step": step_num + 1,
+            "action": action,
+        }))
 
-        # Send action to environment
         step_result = env_step(session_id=session_id, action=action)
         observation = step_result["observation"]
         reward = step_result["reward"]
 
-        if DEBUG:
-            print(f"           reward={reward['value']:+.3f} | {reward['reason'][:60]}")
-
         if step_result["done"]:
-            print(f"  Episode complete at step {step_num+1}")
             break
 
-    # Get final grade
     grade_result = env_grade(session_id=session_id)
     score = grade_result["score"]
 
-    print(f"\n  ✅ FINAL SCORE: {score:.4f}")
-    print(f"  Feedback: {grade_result['feedback']}")
-    print(f"  Violations found:  {grade_result['violations_found']}")
-    print(f"  Violations missed: {grade_result['violations_missed']}")
-    print(f"  False positives:   {grade_result['false_positives']}")
+    # END log — required structured format
+    print(json.dumps({
+        "type": "END",
+        "task_id": task_id,
+        "score": score,
+        "feedback": grade_result["feedback"],
+        "violations_found": grade_result["violations_found"],
+        "violations_missed": grade_result["violations_missed"],
+        "false_positives": grade_result["false_positives"],
+        "total_steps": grade_result["total_steps"],
+    }))
 
     return score
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
-    print("\n🔍 OpenEnv Document Compliance Auditing — Inference Script")
-    print(f"   Model:       {MODEL_NAME}")
-    print(f"   API Base:    {API_BASE_URL}")
-    print(f"   Environment: {OPENENV_URL}")
-
     # Verify environment is reachable
     try:
         r = requests.get(f"{OPENENV_URL}/health")
         r.raise_for_status()
-        print("   Status:      ✅ environment reachable\n")
     except Exception as e:
-        print(f"   Status:      ❌ environment not reachable — {e}")
+        print(json.dumps({"type": "ERROR", "message": f"Environment not reachable: {e}"}))
         return
 
-    # Run all 3 tasks
     scores = {}
     for task_id, seed in SEEDS.items():
         score = run_task(task_id=task_id, seed=seed)
         scores[f"task_{task_id}"] = score
 
     average = sum(scores.values()) / len(scores)
-
-    # Print summary
-    print(f"\n{'='*55}")
-    print("  FINAL RESULTS")
-    print(f"{'='*55}")
-    difficulty = {1: "easy", 2: "medium", 3: "hard"}
-    for task, score in scores.items():
-        tid = int(task.split("_")[1])
-        bar = "█" * int(score * 20)
-        print(f"  {task} ({difficulty[tid]}): {score:.4f}  {bar}")
-    print(f"\n  Average Score: {average:.4f}")
-    print(f"{'='*55}\n")
 
     # Save results
     output = {
@@ -308,7 +273,14 @@ def main():
     with open("baseline_scores.json", "w") as f:
         json.dump(output, f, indent=2)
 
-    print("  ✅ Results saved to baseline_scores.json\n")
+    # Final summary log
+    print(json.dumps({
+        "type": "SUMMARY",
+        "scores": scores,
+        "average_score": round(average, 4),
+        "model": MODEL_NAME,
+    }))
+
     return output
 
 
