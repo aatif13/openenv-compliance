@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "openenv-compliance"
 version = "1.0.0"
 description = "Document Compliance Auditing environment for OpenEnv"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.10"
 dependencies = [
     "openenv-core[core]>=0.2.2",
     "fastapi>=0.115.0",
@@ -25,8 +25,9 @@ dev = [
 ]
 
 [project.scripts]
-server = "server.app:main"
+server = "openenv_compliance.server.app:main"
 
 [tool.setuptools]
 include-package-data = true
-packages = ["app", "app.tasks", "app.graders", "app.documents", "baseline", "server"]
+packages = ["openenv_compliance", "openenv_compliance.server"]
+package-dir = { "openenv_compliance" = ".", "openenv_compliance.server" = "server" }
