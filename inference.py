@@ -4,7 +4,7 @@ Inference Script — OpenEnv Document Compliance Auditing
 MANDATORY environment variables:
     API_BASE_URL   The API endpoint for the LLM
     MODEL_NAME     The model identifier to use for inference
-    HF_TOKEN       Your Hugging Face / API key (optional if using mock)
+    HF_TOKEN       Your Hugging Face / API key
 
 Optional:
     LOCAL_IMAGE_NAME  When using from_docker_image()
@@ -20,113 +20,27 @@ from typing import List, Dict, Any, Optional
 from openai import OpenAI
 
 # ─── Environment Variables ────────────────────────────────────────────────────
-# CRITICAL: When validator runs it, API_BASE_URL and API_KEY will be injected
-<<<<<<< HEAD
-# We detect if these came from the validator or are just defaults
-API_BASE_URL_INJECTED = "API_BASE_URL" in os.environ
-API_KEY_INJECTED = "API_KEY" in os.environ
-
-API_BASE_URL = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
-API_KEY      = os.environ.get("API_KEY", "")
-
-# Only use API_KEY if it was actually injected by validator
-# Don't use HF_TOKEN as fallback - this prevents fake tokens from breaking things
-if not API_KEY_INJECTED:
-    API_KEY = ""
-
-=======
-API_BASE_URL = os.environ.get("API_BASE_URL")
-API_KEY      = os.environ.get("API_KEY")
-
-# For local development without credentials, use sensible defaults
-if not API_BASE_URL:
-    API_BASE_URL = "https://router.huggingface.co/v1"
-if not API_KEY:
-    API_KEY = os.getenv("HF_TOKEN", "")
-
->>>>>>> c8c00f2 (Allow local testing without credentials using mock client)
-MODEL_NAME   = os.getenv("MODEL_NAME", "nvidia/Llama-3.1-Nemotron-70B-Instruct-FP8")
+# Defaults set ONLY for API_BASE_URL and MODEL_NAME (not HF_TOKEN)
+API_BASE_URL     = os.environ["API_BASE_URL"] if "API_BASE_URL" in os.environ else os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
+API_KEY          = os.environ["API_KEY"] if "API_KEY" in os.environ else os.getenv("HF_TOKEN", "")
+MODEL_NAME       = os.getenv("MODEL_NAME", "nvidia/Llama-3.1-Nemotron-70B-Instruct-FP8")
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
-OPENENV_URL  = os.getenv("OPENENV_BASE_URL", "https://aakama-openenv-compliance.hf.space")
+OPENENV_URL      = os.getenv("OPENENV_BASE_URL", "https://aakama-openenv-compliance.hf.space")
 
 MAX_STEPS   = 30
 TEMPERATURE = 0.1
 MAX_TOKENS  = 300
 SEEDS       = {1: 42, 2: 42, 3: 42}
 
-# ─── OpenAI Client ────────────────────────────────────────────────────────────
-# When validator runs: API_BASE_URL and API_KEY will be injected → real client
-<<<<<<< HEAD
-# When running locally without validator: use mock client for testing
-print(f"[INFO] Initializing OpenAI client with base_url={API_BASE_URL}", flush=True)
-print(f"[INFO] Using model={MODEL_NAME}", flush=True)
+# ─── OpenAI Client (ALWAYS use injected API_BASE_URL and API_KEY) ─────────────
+from openai import OpenAI
 
-def _create_mock_client():
-    """Create a mock OpenAI client for testing/fallback."""
-=======
-# When running locally without token: use mock client for testing
-print(f"[INFO] Initializing OpenAI client with base_url={API_BASE_URL}", flush=True)
-print(f"[INFO] Using model={MODEL_NAME}", flush=True)
+client = OpenAI(
+    base_url=API_BASE_URL,
+    api_key=API_KEY,
+)
 
-if API_KEY:
-    # Real credentials available - use actual OpenAI client
-    client = OpenAI(
-        base_url=API_BASE_URL,
-        api_key=API_KEY,
-    )
-    print(f"[INFO] Using real OpenAI client (credentials provided)", flush=True)
-else:
-    # No credentials - use mock client for local testing
-    print(f"[INFO] No credentials provided - using mock client for local testing", flush=True)
-    
->>>>>>> c8c00f2 (Allow local testing without credentials using mock client)
-    class MockMessage:
-        def __init__(self, content):
-            self.content = content
-
-    class MockChoice:
-        def __init__(self, content):
-            self.message = MockMessage(content)
-
-    class MockResponse:
-        def __init__(self):
-            self.choices = [MockChoice('{"action_type": "submit"}')]
-
-    class MockCompletions:
-        @staticmethod
-        def create(**kwargs):
-            return MockResponse()
-
-    class MockChat:
-        completions = MockCompletions()
-
-    class MockClient:
-        chat = MockChat()
-
-<<<<<<< HEAD
-    return MockClient()
-
-
-if API_KEY_INJECTED and API_BASE_URL_INJECTED:
-    # Validator has injected credentials and proxy endpoint - try to use real client
-    try:
-        client = OpenAI(
-            base_url=API_BASE_URL,
-            api_key=API_KEY,
-        )
-        print(f"[INFO] Using real OpenAI client (validator credentials detected)", flush=True)
-    except Exception as e:
-        # If client initialization fails, fall back to mock
-        print(f"[WARNING] OpenAI client initialization failed: {e}", flush=True)
-        print(f"[INFO] Falling back to mock client", flush=True)
-        client = _create_mock_client()
-else:
-    # Local testing mode - use mock client
-    print(f"[INFO] Local testing mode - using mock client", flush=True)
-    client = _create_mock_client()
-=======
-    client = MockClient()
->>>>>>> c8c00f2 (Allow local testing without credentials using mock client)
+print(f"[INFO] base_url={API_BASE_URL} model={MODEL_NAME}", flush=True)
 
 # ─── System Prompts ───────────────────────────────────────────────────────────
 SYSTEM_PROMPTS = {
@@ -276,7 +190,6 @@ What is your next action? Reply with JSON only.
 # ─── Run One Task Episode ─────────────────────────────────────────────────────
 
 def run_task(task_id: int, seed: int) -> float:
-    # ✅ Required [START] block
     print(f"[START] task=task_{task_id}", flush=True)
 
     result = env_reset(task_id=task_id, seed=seed)
@@ -294,7 +207,6 @@ def run_task(task_id: int, seed: int) -> float:
         observation = step_result["observation"]
         last_reward = step_result["reward"]
 
-        # ✅ Required [STEP] block
         print(f"[STEP] step={step_num + 1} reward={last_reward}", flush=True)
 
         if step_result["done"]:
@@ -304,7 +216,6 @@ def run_task(task_id: int, seed: int) -> float:
     score = grade_result["score"]
     total_steps = grade_result["total_steps"]
 
-    # ✅ Required [END] block
     print(f"[END] task=task_{task_id} score={score} steps={total_steps}", flush=True)
 
     return score
@@ -312,7 +223,6 @@ def run_task(task_id: int, seed: int) -> float:
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
-    # Verify environment is reachable
     try:
         r = requests.get(f"{OPENENV_URL}/health")
         r.raise_for_status()
@@ -327,7 +237,6 @@ def main():
 
     average = sum(scores.values()) / len(scores)
 
-    # Save results to file
     output = {
         "model": MODEL_NAME,
         "api_base_url": API_BASE_URL,
@@ -340,7 +249,6 @@ def main():
     with open("baseline_scores.json", "w") as f:
         json.dump(output, f, indent=2)
 
-    # Final summary (informational, not required by validator)
     print(f"[SUMMARY] average_score={round(average, 4)} model={MODEL_NAME}", flush=True)
 
     return output
