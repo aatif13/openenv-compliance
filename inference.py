@@ -4,7 +4,7 @@ Inference Script — OpenEnv Document Compliance Auditing
 MANDATORY environment variables:
     API_BASE_URL   The API endpoint for the LLM
     MODEL_NAME     The model identifier to use for inference
-    HF_TOKEN       Your Hugging Face / API key
+    HF_TOKEN       Your Hugging Face / API key (optional if using mock)
 
 Optional:
     LOCAL_IMAGE_NAME  When using from_docker_image()
@@ -32,17 +32,43 @@ TEMPERATURE = 0.1
 MAX_TOKENS  = 300
 SEEDS       = {1: 42, 2: 42, 3: 42}
 
-# ─── Validate ─────────────────────────────────────────────────────────────────
-if not HF_TOKEN:
-    raise EnvironmentError("HF_TOKEN environment variable not set.")
-
 # ─── OpenAI Client (configured via environment variables) ─────────────────────
-from openai import OpenAI
-
-client = OpenAI(
-    base_url=API_BASE_URL,
-    api_key=HF_TOKEN,
-)
+try:
+    if not HF_TOKEN:
+        raise EnvironmentError("HF_TOKEN not set, using mock client for testing")
+    
+    client = OpenAI(
+        base_url=API_BASE_URL,
+        api_key=HF_TOKEN,
+    )
+except Exception as e:
+    print(f"⚠️  Warning: {e} — Using mock client for local testing")
+    
+    # Mock OpenAI client for testing without real API
+    class MockMessage:
+        def __init__(self, content):
+            self.content = content
+    
+    class MockChoice:
+        def __init__(self, content):
+            self.message = MockMessage(content)
+    
+    class MockResponse:
+        def __init__(self):
+            self.choices = [MockChoice('{"action_type": "submit"}')]
+    
+    class MockCompletions:
+        @staticmethod
+        def create(**kwargs):
+            return MockResponse()
+    
+    class MockChat:
+        completions = MockCompletions()
+    
+    class MockClient:
+        chat = MockChat()
+    
+    client = MockClient()
 
 # ─── System Prompts ───────────────────────────────────────────────────────────
 SYSTEM_PROMPTS = {
