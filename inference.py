@@ -48,17 +48,8 @@ SEEDS       = {1: 42, 2: 42, 3: 42}
 print(f"[INFO] Initializing OpenAI client with base_url={API_BASE_URL}", flush=True)
 print(f"[INFO] Using model={MODEL_NAME}", flush=True)
 
-if API_KEY_INJECTED and API_BASE_URL_INJECTED:
-    # Validator has injected credentials and proxy endpoint - use real client
-    client = OpenAI(
-        base_url=API_BASE_URL,
-        api_key=API_KEY,
-    )
-    print(f"[INFO] Using real OpenAI client (validator credentials detected)", flush=True)
-else:
-    # Local testing mode - use mock client
-    print(f"[INFO] Local testing mode - using mock client", flush=True)
-    
+def _create_mock_client():
+    """Create a mock OpenAI client for testing/fallback."""
     class MockMessage:
         def __init__(self, content):
             self.content = content
@@ -82,7 +73,26 @@ else:
     class MockClient:
         chat = MockChat()
 
-    client = MockClient()
+    return MockClient()
+
+
+if API_KEY_INJECTED and API_BASE_URL_INJECTED:
+    # Validator has injected credentials and proxy endpoint - try to use real client
+    try:
+        client = OpenAI(
+            base_url=API_BASE_URL,
+            api_key=API_KEY,
+        )
+        print(f"[INFO] Using real OpenAI client (validator credentials detected)", flush=True)
+    except Exception as e:
+        # If client initialization fails, fall back to mock
+        print(f"[WARNING] OpenAI client initialization failed: {e}", flush=True)
+        print(f"[INFO] Falling back to mock client", flush=True)
+        client = _create_mock_client()
+else:
+    # Local testing mode - use mock client
+    print(f"[INFO] Local testing mode - using mock client", flush=True)
+    client = _create_mock_client()
 
 # ─── System Prompts ───────────────────────────────────────────────────────────
 SYSTEM_PROMPTS = {
