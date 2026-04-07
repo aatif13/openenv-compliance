@@ -20,7 +20,6 @@ from typing import List, Dict, Any, Optional
 from openai import OpenAI
 
 # ─── Environment Variables ────────────────────────────────────────────────────
-# Defaults set ONLY for API_BASE_URL and MODEL_NAME (not HF_TOKEN)
 API_BASE_URL     = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME       = os.getenv("MODEL_NAME", "nvidia/Llama-3.1-Nemotron-70B-Instruct-FP8")
 HF_TOKEN         = os.getenv("HF_TOKEN")
@@ -32,42 +31,41 @@ TEMPERATURE = 0.1
 MAX_TOKENS  = 300
 SEEDS       = {1: 42, 2: 42, 3: 42}
 
-# ─── OpenAI Client (configured via environment variables) ─────────────────────
+# ─── OpenAI Client ────────────────────────────────────────────────────────────
 try:
     if not HF_TOKEN:
         raise EnvironmentError("HF_TOKEN not set, using mock client for testing")
-    
+
     client = OpenAI(
         base_url=API_BASE_URL,
         api_key=HF_TOKEN,
     )
 except Exception as e:
-    print(f"⚠️  Warning: {e} — Using mock client for local testing")
-    
-    # Mock OpenAI client for testing without real API
+    print(f"WARNING: {e} — Using mock client for local testing", flush=True)
+
     class MockMessage:
         def __init__(self, content):
             self.content = content
-    
+
     class MockChoice:
         def __init__(self, content):
             self.message = MockMessage(content)
-    
+
     class MockResponse:
         def __init__(self):
             self.choices = [MockChoice('{"action_type": "submit"}')]
-    
+
     class MockCompletions:
         @staticmethod
         def create(**kwargs):
             return MockResponse()
-    
+
     class MockChat:
         completions = MockCompletions()
-    
+
     class MockClient:
         chat = MockChat()
-    
+
     client = MockClient()
 
 # ─── System Prompts ───────────────────────────────────────────────────────────
@@ -218,13 +216,8 @@ What is your next action? Reply with JSON only.
 # ─── Run One Task Episode ─────────────────────────────────────────────────────
 
 def run_task(task_id: int, seed: int) -> float:
-    # START log — required structured format
-    print(json.dumps({
-        "type": "START",
-        "task_id": task_id,
-        "seed": seed,
-        "model": MODEL_NAME,
-    }))
+    # ✅ Required [START] block
+    print(f"[START] task=task_{task_id}", flush=True)
 
     result = env_reset(task_id=task_id, seed=seed)
     session_id = result["session_id"]
@@ -232,39 +225,27 @@ def run_task(task_id: int, seed: int) -> float:
 
     history = []
     max_steps = min(observation["max_steps"], MAX_STEPS)
+    last_reward = 0.0
 
     for step_num in range(max_steps):
         action = get_next_action(task_id, observation, history)
 
-        # STEP log — required structured format
-        print(json.dumps({
-            "type": "STEP",
-            "task_id": task_id,
-            "step": step_num + 1,
-            "action": action,
-        }))
-
         step_result = env_step(session_id=session_id, action=action)
         observation = step_result["observation"]
-        reward = step_result["reward"]
+        last_reward = step_result["reward"]
+
+        # ✅ Required [STEP] block
+        print(f"[STEP] step={step_num + 1} reward={last_reward}", flush=True)
 
         if step_result["done"]:
             break
 
     grade_result = env_grade(session_id=session_id)
     score = grade_result["score"]
+    total_steps = grade_result["total_steps"]
 
-    # END log — required structured format
-    print(json.dumps({
-        "type": "END",
-        "task_id": task_id,
-        "score": score,
-        "feedback": grade_result["feedback"],
-        "violations_found": grade_result["violations_found"],
-        "violations_missed": grade_result["violations_missed"],
-        "false_positives": grade_result["false_positives"],
-        "total_steps": grade_result["total_steps"],
-    }))
+    # ✅ Required [END] block
+    print(f"[END] task=task_{task_id} score={score} steps={total_steps}", flush=True)
 
     return score
 
@@ -276,7 +257,7 @@ def main():
         r = requests.get(f"{OPENENV_URL}/health")
         r.raise_for_status()
     except Exception as e:
-        print(json.dumps({"type": "ERROR", "message": f"Environment not reachable: {e}"}))
+        print(f"[ERROR] message=Environment_not_reachable details={e}", flush=True)
         return
 
     scores = {}
@@ -286,7 +267,7 @@ def main():
 
     average = sum(scores.values()) / len(scores)
 
-    # Save results
+    # Save results to file
     output = {
         "model": MODEL_NAME,
         "api_base_url": API_BASE_URL,
@@ -299,13 +280,8 @@ def main():
     with open("baseline_scores.json", "w") as f:
         json.dump(output, f, indent=2)
 
-    # Final summary log
-    print(json.dumps({
-        "type": "SUMMARY",
-        "scores": scores,
-        "average_score": round(average, 4),
-        "model": MODEL_NAME,
-    }))
+    # Final summary (informational, not required by validator)
+    print(f"[SUMMARY] average_score={round(average, 4)} model={MODEL_NAME}", flush=True)
 
     return output
 
