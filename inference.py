@@ -4,10 +4,10 @@ Inference Script — OpenEnv Document Compliance Auditing
 MANDATORY environment variables (injected by hackathon):
     API_BASE_URL   The LiteLLM proxy endpoint
     API_KEY        The LiteLLM proxy key
-    MODEL_NAME     The model identifier to use for inference
 
 Optional:
-    OPENENV_BASE_URL  The OpenEnv environment URL (default: HF Space)
+    MODEL_NAME       The model identifier (has default)
+    OPENENV_BASE_URL The OpenEnv environment URL (has default)
 """
 
 import os
@@ -29,22 +29,33 @@ MAX_TOKENS  = 300
 SEEDS       = {1: 42, 2: 42, 3: 42}
 
 # ─── Validate required env vars ──────────────────────────────────────────────
+missing = []
 if not API_BASE_URL:
-    raise EnvironmentError("API_BASE_URL environment variable is not set or empty.")
+    missing.append("API_BASE_URL")
 if not API_KEY:
-    raise EnvironmentError("API_KEY environment variable is not set or empty.")
+    missing.append("API_KEY")
+if missing:
+    raise EnvironmentError(
+        f"Missing required environment variables: {', '.join(missing)}\n"
+        f"These are injected automatically by the hackathon platform.\n"
+        f"Do NOT run this script locally without setting them first."
+    )
 
 print(f"[INFO] API_BASE_URL={API_BASE_URL}", flush=True)
 print(f"[INFO] MODEL_NAME={MODEL_NAME}", flush=True)
 print(f"[INFO] OPENENV_URL={OPENENV_URL}", flush=True)
 
-# ─── LLM call via raw requests (avoids OpenAI SDK version/httpx crash) ───────
+# ─── LLM call via raw requests ───────────────────────────────────────────────
 def call_llm(messages: list) -> str:
     """
     Calls the LiteLLM proxy directly using requests.
-    Avoids any OpenAI SDK / httpx version compatibility issues.
+    Tries /chat/completions, falls back to /v1/chat/completions if needed.
     """
-    url = f"{API_BASE_URL}/chat/completions"
+    endpoints_to_try = [
+        f"{API_BASE_URL}/chat/completions",
+        f"{API_BASE_URL}/v1/chat/completions",
+    ]
+
     headers = {
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json",
@@ -55,10 +66,27 @@ def call_llm(messages: list) -> str:
         "temperature": TEMPERATURE,
         "max_tokens": MAX_TOKENS,
     }
-    response = requests.post(url, headers=headers, json=payload, timeout=60)
-    response.raise_for_status()
-    data = response.json()
-    return data["choices"][0]["message"]["content"].strip()
+
+    last_error = None
+    for url in endpoints_to_try:
+        try:
+            print(f"[DEBUG] Trying LLM endpoint: {url}", flush=True)
+            response = requests.post(url, headers=headers, json=payload, timeout=60)
+            response.raise_for_status()
+            data = response.json()
+            content = data["choices"][0]["message"]["content"].strip()
+            print(f"[DEBUG] LLM response received ({len(content)} chars)", flush=True)
+            return content
+        except requests.exceptions.HTTPError as e:
+            print(f"[DEBUG] HTTP error on {url}: {e} — {response.text[:200]}", flush=True)
+            last_error = e
+            continue
+        except Exception as e:
+            print(f"[DEBUG] Error on {url}: {e}", flush=True)
+            last_error = e
+            continue
+
+    raise RuntimeError(f"All LLM endpoints failed. Last error: {last_error}")
 
 # ─── System Prompts ───────────────────────────────────────────────────────────
 SYSTEM_PROMPTS = {
@@ -128,7 +156,11 @@ SYSTEM_PROMPTS = {
 # ─── Environment API Helpers ──────────────────────────────────────────────────
 
 def env_reset(task_id: int, seed: int) -> Dict[str, Any]:
-    r = requests.post(f"{OPENENV_URL}/reset", params={"task_id": task_id, "seed": seed}, timeout=30)
+    r = requests.post(
+        f"{OPENENV_URL}/reset",
+        params={"task_id": task_id, "seed": seed},
+        timeout=30,
+    )
     r.raise_for_status()
     return r.json()
 
@@ -143,7 +175,11 @@ def env_step(session_id: str, action: Dict) -> Dict[str, Any]:
     return r.json()
 
 def env_grade(session_id: str) -> Dict[str, Any]:
-    r = requests.post(f"{OPENENV_URL}/grader", params={"session_id": session_id}, timeout=30)
+    r = requests.post(
+        f"{OPENENV_URL}/grader",
+        params={"session_id": session_id},
+        timeout=30,
+    )
     r.raise_for_status()
     return r.json()
 
@@ -177,21 +213,26 @@ def get_next_action(
     messages = [{"role": "system", "content": SYSTEM_PROMPTS[task_id]}]
     messages.extend(history[-8:])
 
-    user_content = f"""
-DOCUMENT:
-{observation['document_text'][:4000]}
+    user_content = textwrap.dedent(f"""
+        DOCUMENT:
+        {observation['document_text'][:4000]}
 
-Current flags raised: {observation['current_flags']}
-Current confirmations: {observation['current_confirmations']}
-Steps taken: {observation['steps_taken']}/{observation['max_steps']}
-Cumulative reward so far: {observation['cumulative_reward']}
+        Current flags raised: {observation['current_flags']}
+        Current confirmations: {observation['current_confirmations']}
+        Steps taken: {observation['steps_taken']}/{observation['max_steps']}
+        Cumulative reward so far: {observation['cumulative_reward']}
 
-What is your next action? Reply with JSON only.
-""".strip()
+        What is your next action? Reply with JSON only.
+    """).strip()
 
     messages.append({"role": "user", "content": user_content})
 
-    raw = call_llm(messages)
+    try:
+        raw = call_llm(messages)
+    except Exception as e:
+        print(f"[WARN] LLM call failed: {e} — defaulting to submit", flush=True)
+        raw = '{"action_type": "submit"}'
+
     action = parse_action(raw)
 
     history.append({"role": "user", "content": user_content})
@@ -254,7 +295,6 @@ def main():
 
     average = sum(scores.values()) / len(scores)
 
-    # Save results to file
     output = {
         "model": MODEL_NAME,
         "api_base_url": API_BASE_URL,
