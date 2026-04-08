@@ -50,9 +50,9 @@ def grade(
     for clause in false_positives:
         breakdown[clause] = "⚠️ false positive — clause is actually present"
 
-    base_score = (earned_weight / total_weight) if total_weight > 0 else 1.0
+    base_score = (earned_weight / total_weight) if total_weight > 0 else 0.999
     fp_penalty = min(0.25, len(false_positives) * 0.05)
-    final_score = max(0.0, min(1.0, base_score + severity_bonus - fp_penalty))
+    final_score = max(0.001, min(0.999, base_score + severity_bonus - fp_penalty))
 
     feedback_parts = []
     if final_score >= 0.85:
