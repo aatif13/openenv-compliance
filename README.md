@@ -164,7 +164,7 @@ We trained `Qwen/Qwen2.5-0.5B-Instruct` using **HF TRL SFTTrainer** on environme
 **Baseline agent (rule-based, no LLM) scores 0.8632 average** — this proves the environment has strong, clear reward signals. A trained LLM on a larger model will exceed this baseline.
 
 ### Training Loss Curve
-![Training Results](training_results.png)
+![test_result](test_result.png)
 *Left: Before vs After scores per task | Center: Training loss curve (decreasing = model learning) | Right: Score improvement per task*
 
 ### Curriculum Learning Progression
