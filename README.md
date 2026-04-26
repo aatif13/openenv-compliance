@@ -20,12 +20,28 @@ tags:
 
 | | |
 |---|---|
-| 🚀 **Live API** | https://aakama-openenv-compliance.hf.space |
+| 🤗 **Hugging Face Space (canonical)** | https://huggingface.co/spaces/aakama/openenv-compliance |
+| 🚀 **Live API (same Space)** | https://aakama-openenv-compliance.hf.space |
 | 📖 **Swagger UI** | https://aakama-openenv-compliance.hf.space/docs |
 | 💻 **GitHub** | https://github.com/aatif13/openenv-compliance |
-| 📓 **Training Notebook** | https://drive.google.com/file/d/1PGAo8wz4GixSf9kgsvlotQJ80T5M6Zf_/view?usp=sharing |
-| 🎥 **Demo Video** | [Watch on YouTube](YOUR_YOUTUBE_URL) |
-| ✅ **Validator** | `openenv validate` passes 6/6 criteria |
+| 📝 **Mini write-up (for Hub / blog)** | [`HUGGINGFACE_BLOG.md`](HUGGINGFACE_BLOG.md) in this repository |
+| 📓 **Training notebook (share)** | [Google Drive (notebook export)](https://drive.google.com/file/d/1PGAo8wz4GixSf9kgsvlotQJ80T5M6Zf_/view?usp=sharing) |
+| 📓 **Training notebook (repo)** | [`document(2) (1).ipynb`](document(2)%20(1).ipynb) — open in [Google Colab](https://colab.research.google.com/) via **File → Upload notebook** |
+| 🎥 **Demo video** | Add a **public** short (under 2 minutes) YouTube URL after you publish **(link only; do not commit large video files to the Hub)** — example: `https://www.youtube.com/watch?v=YOUR_ID` |
+| 📋 **What judges look for** | [Criteria (Google Doc)](https://docs.google.com/document/d/1Odznuzwtb1ecDOm2t6ToZd4MuMXXfO6vWUGcxbC6mFs/edit?tab=t.0#bookmark=kix.2dz0x0nie3me) |
+| ✅ **Validator** | `openenv validate` passes 6/6 criteria against the live Space (see [section 10](#10-validation)) |
+
+### Submission requirements (self-check vs [OpenEnv / HF guidance](https://huggingface.co/spaces/aakama/openenv-compliance))
+
+| Expectation | How this project satisfies it |
+|------------|------------------------------|
+| Build on **OpenEnv** (latest) — do not reinvent the wheel | `openenv-core>=0.2.0` in [`pyproject.toml`](pyproject.toml), [`openenv.yaml`](openenv.yaml), and HTTP API aligned with the OpenEnv spec |
+| **Training** with **Unsloth** and/or **HF TRL** / RL stack | The Colab training notebook uses **Unsloth** (QLoRA) + **TRL** (`SFTTrainer` warm-start + `GRPOTrainer`); see [`document(2) (1).ipynb`](document(2)%20(1).ipynb) |
+| **Evidence of training** (loss + reward from a real run) | Notebook cells plot **training reward** and **loss** curves; export `training_results.png` (and related figures) after a run. Commit or host those files so this README and the Space display images correctly. |
+| **Short write-up or under-2-minute video** | Write-up: [`HUGGINGFACE_BLOG.md`](HUGGINGFACE_BLOG.md). Video: add your public URL in the table above (links only). |
+| **Hugging Face Space** pushed and discoverable | Space: [aakama/openenv-compliance](https://huggingface.co/spaces/aakama/openenv-compliance) |
+| **README** with motivation, how the env works, results, and **all links** | This file + links in the first table. |
+| **No large video files** in the Hub upload | Use YouTube (or similar) **URLs** only. |
 
 ---
 
@@ -144,11 +160,13 @@ This is not a game or a toy. Every task in this environment reflects work done d
 
 ---
 
-## 4. Training Results
+## 4. Training and results
 
-We trained `Qwen/Qwen2.5-0.5B-Instruct` using **HF TRL SFTTrainer** on environment-generated compliance auditing trajectories.
+**Stack (see training notebook).** The reference implementation uses `Qwen/Qwen2.5-0.5B-Instruct` (QLoRA via Unsloth), a short **TRL SFT** warm-start on high-reward trajectory steps to lock in **valid JSON** actions, then **TRL GRPO** with multiple reward functions (format, field validity, severity heuristics). The notebook connects to the **live Space** at `https://aakama-openenv-compliance.hf.space`, plots **reward and loss** curves, and evaluates before vs after per task.
 
-### Before vs After Training
+The table below is a **reported** before/after snapshot from a supervised run on environment trajectories (small models can show mixed results across tasks; see the notebook for a full GRPO+eval loop). Re-run the notebook to regenerate metrics and the exported plot files for your own hardware and seeds.
+
+### Before vs after (example run)
 
 | Task | Difficulty | Before Training | After Training | Change |
 |------|-----------|----------------|----------------|--------|
@@ -163,13 +181,15 @@ We trained `Qwen/Qwen2.5-0.5B-Instruct` using **HF TRL SFTTrainer** on environme
 
 **Baseline agent (rule-based, no LLM) scores 0.8632 average** — this proves the environment has strong, clear reward signals. A trained LLM on a larger model will exceed this baseline.
 
-### Training Loss Curve
-![test_result](test_result.png)
-*Left: Before vs After scores per task | Center: Training loss curve (decreasing = model learning) | Right: Score improvement per task*
+### Training curves (export from the notebook)
 
-### Curriculum Learning Progression
-![Curriculum Progression](curriculum_progression.png)
-*Top: Episode scores over time with improvement trend | Bottom: Difficulty level progression — agent automatically advances from Level 1 (Junior Clerk) to Level 5 (Regulatory Expert) as performance improves*
+After a full local or Colab run, the notebook writes `training_results.png`, `before_after_comparison.png`, and optionally `curriculum_progression.png`. **Place these files in the repository root** (or update these paths) so the images below render on GitHub and on the Space README. If you only have `test_result.png` from an older run, you can rename it or add a second image line for that file.
+
+![Training results](training_results.png)
+*Example layout (from a full training run): before/after by task, training loss, and per-task change.*
+
+![Curriculum progression](curriculum_progression.png)
+*Curriculum: episode scores and level progression when using curriculum features during evaluation (when exported by the notebook).*
 
 ---
 
@@ -220,15 +240,16 @@ curl -X POST "https://aakama-openenv-compliance.hf.space/baseline"
 git clone https://github.com/aatif13/openenv-compliance
 cd openenv-compliance
 pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 7860
+uvicorn asgi:app --host 0.0.0.0 --port 7860
 # Open http://localhost:7860/docs
 ```
 
-### Run Training Notebook
-1. Open [Google Colab Notebook](YOUR_COLAB_LINK)
-2. Runtime → Change type → T4 GPU
-3. Add HF token in Step 2
-4. Runtime → Run all
+### Run the training notebook
+1. Optional: [Google Drive copy](https://drive.google.com/file/d/1PGAo8wz4GixSf9kgsvlotQJ80T5M6Zf_/view?usp=sharing) or open [Google Colab](https://colab.research.google.com/) and upload [`document(2) (1).ipynb`](document(2)%20(1).ipynb) from this repo.
+2. **Runtime → Change runtime type →** GPU (T4 is enough for 0.5B QLoRA).
+3. In the configuration cell, set your **Hugging Face token** (e.g. Colab *Secrets* as `HF_TOKEN`, as documented in the notebook) so the model can be downloaded.
+4. **Runtime → Run all** (expect trajectory collection, SFT warm-start, then GRPO when enabled).
+5. Download the generated PNGs and commit them if you need figures in this README to render in the Space.
 
 ---
 
@@ -252,7 +273,10 @@ uvicorn app.main:app --host 0.0.0.0 --port 7860
 
 ```
 openenv-compliance/
-├── inference.py              # Judges run this — OpenAI client via env vars
+├── document(2) (1).ipynb     # Colab: Unsloth + TRL SFT + GRPO, plots, eval
+├── HUGGINGFACE_BLOG.md       # Text you can post as a Hugging Face community article
+├── asgi.py                    # ASGI entry (used by Docker / `uvicorn asgi:app`)
+├── inference.py              # Judges / LiteLLM — env vars in file header
 ├── app/
 │   ├── main.py               # All API endpoints
 │   ├── env.py                # Core step/reset/state/grade logic
@@ -265,6 +289,8 @@ openenv-compliance/
 │   ├── graders/              # Scoring functions
 │   └── documents/
 │       └── generator.py      # Synthetic document generator (5 difficulty levels)
+├── static/                   # Dashboard + Swagger UI assets
+├── tests/                    # Pytest
 ├── server/app.py             # uv run server entry point
 ├── baseline/run_baseline.py  # Internal baseline script
 ├── openenv.yaml              # OpenEnv spec
