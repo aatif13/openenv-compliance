@@ -25,23 +25,11 @@ tags:
 | 📖 **Swagger UI** | https://aakama-openenv-compliance.hf.space/docs |
 | 💻 **GitHub** | https://github.com/aatif13/openenv-compliance |
 | 📝 **Mini write-up (for Hub / blog)** | [`HUGGINGFACE_BLOG.md`](HUGGINGFACE_BLOG.md) in this repository |
-| 📓 **Training notebook (share)** | [Google Drive (notebook export)](https://drive.google.com/file/d/1PGAo8wz4GixSf9kgsvlotQJ80T5M6Zf_/view?usp=sharing) |
-| 📓 **Training notebook (repo)** | [`document(2) (1).ipynb`](document(2)%20(1).ipynb) — open in [Google Colab](https://colab.research.google.com/) via **File → Upload notebook** |
-| 🎥 **Demo video** | Add a **public** short (under 2 minutes) YouTube URL after you publish **(link only; do not commit large video files to the Hub)** — example: `https://www.youtube.com/watch?v=YOUR_ID` |
-| 📋 **What judges look for** | [Criteria (Google Doc)](https://docs.google.com/document/d/1Odznuzwtb1ecDOm2t6ToZd4MuMXXfO6vWUGcxbC6mFs/edit?tab=t.0#bookmark=kix.2dz0x0nie3me) |
+| 📓 **Training notebook (repo)** |  open in [Google Colab](https://drive.google.com/file/d/1X7b7ycyWB2HKxp6JvIAV4V6PvS3RXgYz/view?usp=sharing) 
+| 🎥 **Demo video** | https://youtu.be/WrZbpvVJP8A
 | ✅ **Validator** | `openenv validate` passes 6/6 criteria against the live Space (see [section 10](#10-validation)) |
 
 ### Submission requirements (self-check vs [OpenEnv / HF guidance](https://huggingface.co/spaces/aakama/openenv-compliance))
-
-| Expectation | How this project satisfies it |
-|------------|------------------------------|
-| Build on **OpenEnv** (latest) — do not reinvent the wheel | `openenv-core>=0.2.0` in [`pyproject.toml`](pyproject.toml), [`openenv.yaml`](openenv.yaml), and HTTP API aligned with the OpenEnv spec |
-| **Training** with **Unsloth** and/or **HF TRL** / RL stack | The Colab training notebook uses **Unsloth** (QLoRA) + **TRL** (`SFTTrainer` warm-start + `GRPOTrainer`); see [`document(2) (1).ipynb`](document(2)%20(1).ipynb) |
-| **Evidence of training** (loss + reward from a real run) | Notebook cells plot **training reward** and **loss** curves; export `training_results.png` (and related figures) after a run. Commit or host those files so this README and the Space display images correctly. |
-| **Short write-up or under-2-minute video** | Write-up: [`HUGGINGFACE_BLOG.md`](HUGGINGFACE_BLOG.md). Video: add your public URL in the table above (links only). |
-| **Hugging Face Space** pushed and discoverable | Space: [aakama/openenv-compliance](https://huggingface.co/spaces/aakama/openenv-compliance) |
-| **README** with motivation, how the env works, results, and **all links** | This file + links in the first table. |
-| **No large video files** in the Hub upload | Use YouTube (or similar) **URLs** only. |
 
 ---
 
@@ -245,7 +233,7 @@ uvicorn asgi:app --host 0.0.0.0 --port 7860
 ```
 
 ### Run the training notebook
-1. Optional: [Google Drive copy](https://drive.google.com/file/d/1PGAo8wz4GixSf9kgsvlotQJ80T5M6Zf_/view?usp=sharing) or open [Google Colab](https://colab.research.google.com/) and upload [`document(2) (1).ipynb`](document(2)%20(1).ipynb) from this repo.
+1.  open: [Google Colab](https://drive.google.com/file/d/1X7b7ycyWB2HKxp6JvIAV4V6PvS3RXgYz/view?usp=sharing)
 2. **Runtime → Change runtime type →** GPU (T4 is enough for 0.5B QLoRA).
 3. In the configuration cell, set your **Hugging Face token** (e.g. Colab *Secrets* as `HF_TOKEN`, as documented in the notebook) so the model can be downloaded.
 4. **Runtime → Run all** (expect trajectory collection, SFT warm-start, then GRPO when enabled).
